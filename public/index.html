@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>길드보스 전체 순위 기록</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; background: #1a1a1a; color: #eee; }
+  h1 { font-size: 18px; }
+  .tabs { margin-bottom: 12px; }
+  .tabs button { font-size: 14px; padding: 6px 14px; background: #2a2a2a; color: #eee; border: 1px solid #444; cursor: pointer; }
+  .tabs button.active { background: #444; border-color: #888; }
+  select { font-size: 14px; padding: 4px 8px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #333; }
+  th { color: #aaa; font-weight: normal; }
+  .rank1 { color: #ffd54f; }
+  .rank2 { color: #cfd8dc; }
+  .rank3 { color: #d7a26e; }
+  .hint { color: #888; font-size: 12px; margin: -4px 0 12px; }
+  #empty { color: #888; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<h1>길드보스 전체 순위 기록</h1>
+<div class="tabs">
+  <button id="tabDaily" class="active">일별</button>
+  <button id="tabWeekly">주별</button>
+</div>
+
+<div id="dailyView">
+  <p class="hint">매일 새벽 5:58(KST) 자동 저장된 스냅샷입니다.</p>
+  <select id="dateSelect"></select>
+</div>
+<div id="weeklyView" hidden>
+  <p class="hint">보상 기준 주(화 06시 ~ 다음 월 06시)의 화~월 7일치 일별 기록을 더한 값입니다. 7일이 다 안 모인 주는 "진행중"(그때까지의 합계)으로 표시됩니다. MVP는 날짜별 1위만 알 수 있어서 주별 합산은 표시하지 않습니다.</p>
+  <select id="weekSelect"></select>
+</div>
+
+<table id="table">
+  <thead><tr><th>순위</th><th>길드</th><th>누적 데미지</th><th id="mvpHeader">MVP</th></tr></thead>
+  <tbody id="tbody"></tbody>
+</table>
+<p id="empty" hidden>아직 기록된 스냅샷이 없습니다. 첫 새벽 5:58 이후 확인해주세요.</p>
+
+<script>
+function formatGyeong(numStr) {
+  const n = BigInt(numStr);
+  const unit = 10n ** 16n;
+  const whole = n / unit;
+  const frac = ((n % unit) * 100n) / unit;
+  return `${whole.toLocaleString()}.${frac.toString().padStart(2, "0")}경`;
+}
+
+// 순수 달력 계산용 — 보는 사람 브라우저의 로컬 시간대와 무관하게 항상 같은 결과가 나오도록
+// UTC 메서드만 사용한다(로컬 Date 메서드와 toISOString()의 UTC 출력을 섞으면 시간대에 따라
+// 날짜가 하루 밀리는 버그가 생긴다 — 실측으로 발견).
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// 5:58 스냅샷은 그 시각 기준 "전날" 게임일자(초기화 2분 전) 값이라, 캡처일 -1일이 실제 게임일자다
+function gameDayOf(captureDateStr) {
+  return addDays(captureDateStr, -1);
+}
+
+// "YYYY-MM-DD" 게임일자가 속한 주(월~일)의 월요일 날짜를 반환
+function mondayOf(gameDayStr) {
+  const d = new Date(gameDayStr + "T00:00:00Z");
+  const day = d.getUTCDay(); // 0=일 ... 6=토
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setUTCDate(d.getUTCDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
+// 캡처일 기준 그 스냅샷이 속하는 주(월~일)의 월요일 날짜
+function weekKeyOf(captureDateStr) {
+  return mondayOf(gameDayOf(captureDateStr));
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById("tbody");
+  const sorted = [...rows].sort((a, b) => (b.totalDamage > a.totalDamage ? 1 : -1));
+  tbody.innerHTML = "";
+  sorted.forEach((g, i) => {
+    const tr = document.createElement("tr");
+    const rank = i + 1;
+    const rankClass = rank === 1 ? "rank1" : rank === 2 ? "rank2" : rank === 3 ? "rank3" : "";
+    tr.innerHTML = `
+      <td class="${rankClass}">${rank}</td>
+      <td>${g.guildName}</td>
+      <td>${formatGyeong(g.totalDamage)}</td>
+      <td>${g.mvp ? `${g.mvp.name} (${formatGyeong(g.mvp.damage)})` : "-"}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+function toDailyRows(rankings) {
+  return rankings.guilds.map((g) => ({
+    guildName: g.guildName,
+    totalDamage: BigInt(g.totalDamage),
+    mvp: g.mvp ? { name: g.mvp.name, damage: BigInt(g.mvp.damage) } : null,
+  }));
+}
+
+// 화~월 7번의 일별 스냅샷(=월~일 게임일자 7일치)을 길드별로 합산해 그 주의 누적 순위를 만든다.
+// MVP는 날짜별 "그날 1위"만 알 수 있어 주 단위 정확한 합산이 불가능하므로 표시하지 않는다.
+function toWeeklyRows(entries) {
+  const sums = new Map(); // guildId -> { guildName, totalDamage }
+  for (const entry of entries) {
+    for (const g of entry.rankings.guilds) {
+      const prev = sums.get(g.guildId) || { guildName: g.guildName, totalDamage: 0n };
+      prev.totalDamage += BigInt(g.totalDamage);
+      sums.set(g.guildId, prev);
+    }
+  }
+  return [...sums.values()].map((g) => ({ ...g, mvp: null }));
+}
+
+async function main() {
+  const res = await fetch("/api/guild-boss-log");
+  const { log } = await res.json();
+
+  const dailyView = document.getElementById("dailyView");
+  const weeklyView = document.getElementById("weeklyView");
+  const tabDaily = document.getElementById("tabDaily");
+  const tabWeekly = document.getElementById("tabWeekly");
+  const dateSelect = document.getElementById("dateSelect");
+  const weekSelect = document.getElementById("weekSelect");
+  const empty = document.getElementById("empty");
+  const table = document.getElementById("table");
+
+  if (!log.length) {
+    empty.hidden = false;
+    document.querySelector(".tabs").hidden = true;
+    dailyView.hidden = true;
+    table.hidden = true;
+    return;
+  }
+
+  // 일별 옵션 (최신순)
+  [...log].reverse().forEach((entry, i) => {
+    const opt = document.createElement("option");
+    opt.value = log.length - 1 - i;
+    opt.textContent = entry.date;
+    dateSelect.appendChild(opt);
+  });
+
+  // 주별 그룹: weekKey(그 주 월요일 날짜) -> 그 주에 속하는 캡처 항목들(최대 화~월 7개)
+  const weeks = new Map();
+  for (const entry of log) {
+    const weekKey = weekKeyOf(entry.date);
+    if (!weeks.has(weekKey)) weeks.set(weekKey, []);
+    weeks.get(weekKey).push(entry);
+  }
+  const weekKeys = [...weeks.keys()].sort().reverse();
+  weekKeys.forEach((weekKey) => {
+    const entries = weeks.get(weekKey);
+    const opt = document.createElement("option");
+    opt.value = weekKey;
+    const sunday = addDays(weekKey, 6);
+    const complete = entries.length >= 7;
+    const status = complete ? "" : ` (진행중, ${entries.length}/7일 집계)`;
+    opt.textContent = `${weekKey} ~ ${sunday}${status}`;
+    weekSelect.appendChild(opt);
+  });
+
+  dateSelect.addEventListener("change", () => {
+    renderTable(toDailyRows(log[Number(dateSelect.value)].rankings));
+  });
+  weekSelect.addEventListener("change", () => {
+    renderTable(toWeeklyRows(weeks.get(weekSelect.value)));
+  });
+
+  tabDaily.addEventListener("click", () => {
+    tabDaily.classList.add("active");
+    tabWeekly.classList.remove("active");
+    dailyView.hidden = false;
+    weeklyView.hidden = true;
+    renderTable(toDailyRows(log[Number(dateSelect.value)].rankings));
+  });
+  tabWeekly.addEventListener("click", () => {
+    tabWeekly.classList.add("active");
+    tabDaily.classList.remove("active");
+    weeklyView.hidden = false;
+    dailyView.hidden = true;
+    renderTable(toWeeklyRows(weeks.get(weekSelect.value)));
+  });
+
+  renderTable(toDailyRows(log[log.length - 1].rankings));
+}
+
+main();
+</script>
+</body>
+</html>

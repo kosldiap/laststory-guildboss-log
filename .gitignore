@@ -1,0 +1,4 @@
+node_modules/
+.env
+guild_boss_log.json
+test-server.ps1
