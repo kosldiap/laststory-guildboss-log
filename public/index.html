@@ -42,8 +42,10 @@
   #specDetail .detailActions { margin-top: 12px; display: flex; gap: 8px; }
   #specTbody input[type="password"] { font-size: 13px; padding: 4px 6px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; width: 120px; }
 
+  #rankingGate { margin-bottom: 12px; }
+  .adminLoginBtn { font-size: 12px; padding: 4px 10px; background: none; color: #666; border: 1px solid #3a3a3a; border-radius: 4px; cursor: pointer; }
   #rankingGate input[type="password"] { font-size: 14px; padding: 6px 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; width: 160px; }
-  #rankingGate button { font-size: 14px; padding: 7px 16px; background: #a67c00; color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: 6px; }
+  #rankingGate #rankingPwSubmit { font-size: 14px; padding: 7px 16px; background: #a67c00; color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: 6px; }
 
   /* 좁은 화면에서는 표 대신 카드 목록으로 — market-tracker 거래소 사이트와 같은 패턴 */
   @media (max-width: 640px) {
@@ -77,9 +79,12 @@
 </div>
 
 <div id="rankingGate">
-  <input type="password" id="rankingPwInput" placeholder="관리자 비밀번호">
-  <button id="rankingPwSubmit">확인</button>
-  <span id="rankingGateStatus" style="font-size:12px;color:#f5a;"></span>
+  <button id="adminLoginBtn" class="adminLoginBtn">관리자 로그인</button>
+  <span id="adminLoginBox" hidden>
+    <input type="password" id="rankingPwInput" placeholder="비밀번호">
+    <button id="rankingPwSubmit">확인</button>
+    <span id="rankingGateStatus" style="font-size:12px;color:#f5a;"></span>
+  </span>
 </div>
 
 <div id="rankingContent" hidden>
@@ -431,9 +436,17 @@ function main() {
 }
 
 function wireRankingGate(onUnlocked) {
+  const adminBtn = document.getElementById("adminLoginBtn");
+  const adminBox = document.getElementById("adminLoginBox");
   const pwInput = document.getElementById("rankingPwInput");
   const submitBtn = document.getElementById("rankingPwSubmit");
   const status = document.getElementById("rankingGateStatus");
+
+  adminBtn.addEventListener("click", () => {
+    adminBtn.hidden = true;
+    adminBox.hidden = false;
+    pwInput.focus();
+  });
 
   const tryUnlock = async () => {
     status.textContent = "확인 중...";
