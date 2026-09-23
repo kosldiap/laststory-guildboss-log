@@ -1,6 +1,7 @@
 import express from "express";
 import path from "node:path";
 import fs from "node:fs";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -8,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const API_BASE = "https://last-story-app.fly.dev";
 const TOKEN = process.env.CHARACTER_TOKEN;
 const PORT = process.env.PORT || 3000;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
 
 if (!TOKEN) {
   console.error("CHARACTER_TOKEN 환경변수가 설정되지 않았습니다. 서버를 시작할 수 없습니다.");
@@ -137,6 +139,34 @@ function saveSpecs(data) {
 
 let memberSpecs = loadSpecs();
 
+if (!ADMIN_PASSWORD) {
+  console.log("[member-specs] ADMIN_PASSWORD 환경변수가 없어 관리자 열람 기능이 꺼져있습니다.");
+}
+
+// 비밀번호는 평문으로 저장하지 않는다 — scrypt(내장 crypto)로 해시+솔트해서 저장.
+function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return { salt, hash };
+}
+
+function verifyPassword(password, salt, hash) {
+  if (!password || !salt || !hash) return false;
+  const check = crypto.scryptSync(password, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(check, "hex"), Buffer.from(hash, "hex"));
+}
+
+// 작성자 본인 비밀번호이거나(있는 경우) 관리자 비밀번호(설정된 경우)면 통과
+function canAccess(entry, password) {
+  if (ADMIN_PASSWORD && password === ADMIN_PASSWORD) return true;
+  if (entry && verifyPassword(password, entry.salt, entry.hash)) return true;
+  return false;
+}
+
+function publicEntry(entry) {
+  const { salt, hash, ...rest } = entry;
+  return rest;
+}
+
 const app = express();
 app.use(express.json());
 
@@ -144,26 +174,65 @@ app.get("/api/guild-boss-log", (req, res) => {
   res.json({ log });
 });
 
+// 이름 목록만 공개 — 스탯 상세는 본인/관리자 비밀번호로 확인해야 보인다
 app.get("/api/member-specs", (req, res) => {
-  res.json({ specs: memberSpecs });
+  res.json({ names: Object.keys(memberSpecs) });
+});
+
+app.post("/api/member-specs/:name/view", (req, res) => {
+  const name = req.params.name.trim();
+  const entry = memberSpecs[name];
+  if (!entry) return res.status(404).json({ error: "등록된 스펙이 없습니다." });
+  if (!canAccess(entry, req.body.password)) {
+    return res.status(403).json({ error: "비밀번호가 틀렸습니다." });
+  }
+  res.json({ ok: true, name, entry: publicEntry(entry) });
 });
 
 app.put("/api/member-specs/:name", (req, res) => {
   const name = req.params.name.trim();
   if (!name) return res.status(400).json({ error: "길드멤버 이름이 필요합니다." });
 
+  const existing = memberSpecs[name];
+  const newPassword = req.body.newPassword;
+
+  if (existing) {
+    if (!canAccess(existing, req.body.password)) {
+      return res.status(403).json({ error: "비밀번호가 틀렸습니다." });
+    }
+  } else {
+    if (!newPassword) {
+      return res.status(400).json({ error: "처음 등록할 땐 비밀번호를 설정해야 합니다." });
+    }
+  }
+
   const entry = {};
   for (const field of SPEC_FIELDS) {
     const value = req.body[field];
     entry[field] = typeof value === "string" ? value.trim() : value ?? "";
   }
+  // 비밀번호를 새로 설정하려는 경우에만 해시를 갱신, 아니면 기존 해시 유지
+  if (newPassword) {
+    const { salt, hash } = hashPassword(newPassword);
+    entry.salt = salt;
+    entry.hash = hash;
+  } else {
+    entry.salt = existing.salt;
+    entry.hash = existing.hash;
+  }
+
   memberSpecs[name] = entry;
   saveSpecs(memberSpecs);
-  res.json({ ok: true, name, entry });
+  res.json({ ok: true, name, entry: publicEntry(entry) });
 });
 
 app.delete("/api/member-specs/:name", (req, res) => {
   const name = req.params.name.trim();
+  const existing = memberSpecs[name];
+  if (!existing) return res.status(404).json({ error: "등록된 스펙이 없습니다." });
+  if (!canAccess(existing, req.body.password)) {
+    return res.status(403).json({ error: "비밀번호가 틀렸습니다." });
+  }
   delete memberSpecs[name];
   saveSpecs(memberSpecs);
   res.json({ ok: true });
