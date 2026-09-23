@@ -41,6 +41,9 @@
   #specDetail .grid span { display: block; color: #888; font-size: 11px; }
   #specDetail .detailActions { margin-top: 12px; display: flex; gap: 8px; }
   #specTbody input[type="password"] { font-size: 13px; padding: 4px 6px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; width: 120px; }
+
+  #rankingGate input[type="password"] { font-size: 14px; padding: 6px 8px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; width: 160px; }
+  #rankingGate button { font-size: 14px; padding: 7px 16px; background: #a67c00; color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -51,20 +54,29 @@
   <button id="tabSpecs">길드원 스펙</button>
 </div>
 
-<div id="dailyView">
-  <p class="hint">매일 새벽 5:58(KST) 자동 저장된 스냅샷입니다.</p>
-  <select id="dateSelect"></select>
-</div>
-<div id="weeklyView" hidden>
-  <p class="hint">보상 기준 주(화 06시 ~ 다음 월 06시)의 화~월 7일치 일별 기록을 더한 값입니다. 7일이 다 안 모인 주는 "진행중"(그때까지의 합계)으로 표시됩니다. MVP는 날짜별 1위만 알 수 있어서 주별 합산은 표시하지 않습니다.</p>
-  <select id="weekSelect"></select>
+<div id="rankingGate">
+  <p class="hint">일별/주별 순위 기록은 관리자 비밀번호를 입력해야 볼 수 있습니다.</p>
+  <input type="password" id="rankingPwInput" placeholder="관리자 비밀번호">
+  <button id="rankingPwSubmit">확인</button>
+  <span id="rankingGateStatus" style="font-size:12px;color:#f5a;"></span>
 </div>
 
-<table id="table">
-  <thead><tr><th>순위</th><th>길드</th><th>누적 데미지</th><th id="mvpHeader">MVP</th></tr></thead>
-  <tbody id="tbody"></tbody>
-</table>
-<p id="empty" hidden>아직 기록된 스냅샷이 없습니다. 첫 새벽 5:58 이후 확인해주세요.</p>
+<div id="rankingContent" hidden>
+  <div id="dailyView">
+    <p class="hint">매일 새벽 5:58(KST) 자동 저장된 스냅샷입니다.</p>
+    <select id="dateSelect"></select>
+  </div>
+  <div id="weeklyView" hidden>
+    <p class="hint">보상 기준 주(화 06시 ~ 다음 월 06시)의 화~월 7일치 일별 기록을 더한 값입니다. 7일이 다 안 모인 주는 "진행중"(그때까지의 합계)으로 표시됩니다. MVP는 날짜별 1위만 알 수 있어서 주별 합산은 표시하지 않습니다.</p>
+    <select id="weekSelect"></select>
+  </div>
+
+  <table id="table">
+    <thead><tr><th>순위</th><th>길드</th><th>누적 데미지</th><th id="mvpHeader">MVP</th></tr></thead>
+    <tbody id="tbody"></tbody>
+  </table>
+  <p id="empty" hidden>아직 기록된 스냅샷이 없습니다. 첫 새벽 5:58 이후 확인해주세요.</p>
+</div>
 
 <div id="specsView" hidden>
   <p class="hint">스탯 상세는 본인이 등록할 때 설정한 비밀번호(또는 관리자 비밀번호)를 입력해야 보여요. 이름 목록만 누구나 볼 수 있습니다.</p>
@@ -357,40 +369,88 @@ function wireSpecForm() {
   });
 }
 
-async function main() {
-  const res = await fetch("/api/guild-boss-log");
-  const { log } = await res.json();
-
+function main() {
   const dailyView = document.getElementById("dailyView");
   const weeklyView = document.getElementById("weeklyView");
   const specsView = document.getElementById("specsView");
+  const rankingGate = document.getElementById("rankingGate");
+  const rankingContent = document.getElementById("rankingContent");
   const tabDaily = document.getElementById("tabDaily");
   const tabWeekly = document.getElementById("tabWeekly");
   const tabSpecs = document.getElementById("tabSpecs");
-  const dateSelect = document.getElementById("dateSelect");
-  const weekSelect = document.getElementById("weekSelect");
-  const empty = document.getElementById("empty");
-  const table = document.getElementById("table");
+
+  let rankingTab = "daily"; // 잠금 풀리기 전에 눌러둔 탭 기억용
+  let rankingUnlocked = false;
 
   function showTab(which) {
     tabDaily.classList.toggle("active", which === "daily");
     tabWeekly.classList.toggle("active", which === "weekly");
     tabSpecs.classList.toggle("active", which === "specs");
+    specsView.hidden = which !== "specs";
+
+    if (which === "specs") {
+      rankingGate.hidden = true;
+      rankingContent.hidden = true;
+      return;
+    }
+    rankingTab = which;
     dailyView.hidden = which !== "daily";
     weeklyView.hidden = which !== "weekly";
-    specsView.hidden = which !== "specs";
-    table.hidden = which === "specs";
+    rankingGate.hidden = rankingUnlocked;
+    rankingContent.hidden = !rankingUnlocked;
   }
 
+  tabDaily.addEventListener("click", () => showTab("daily"));
+  tabWeekly.addEventListener("click", () => showTab("weekly"));
   tabSpecs.addEventListener("click", () => showTab("specs"));
+
   wireSpecForm();
   loadSpecs();
+  wireRankingGate(() => {
+    rankingUnlocked = true;
+    showTab(rankingTab);
+  });
+
+  showTab("daily");
+}
+
+function wireRankingGate(onUnlocked) {
+  const pwInput = document.getElementById("rankingPwInput");
+  const submitBtn = document.getElementById("rankingPwSubmit");
+  const status = document.getElementById("rankingGateStatus");
+
+  const tryUnlock = async () => {
+    status.textContent = "확인 중...";
+    const res = await fetch("/api/guild-boss-log", {
+      headers: { "X-Admin-Password": pwInput.value },
+    });
+    if (!res.ok) {
+      status.textContent = "비밀번호가 틀렸습니다.";
+      return;
+    }
+    status.textContent = "";
+    const { log } = await res.json();
+    setupRankingViews(log);
+    onUnlocked();
+  };
+
+  submitBtn.addEventListener("click", tryUnlock);
+  pwInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") tryUnlock();
+  });
+}
+
+function setupRankingViews(log) {
+  const dateSelect = document.getElementById("dateSelect");
+  const weekSelect = document.getElementById("weekSelect");
+  const empty = document.getElementById("empty");
+  const table = document.getElementById("table");
+  const tabWeekly = document.getElementById("tabWeekly");
 
   if (!log.length) {
     empty.hidden = false;
     dateSelect.hidden = true;
     tabWeekly.hidden = true;
-    tabDaily.addEventListener("click", () => showTab("daily"));
     return;
   }
 
@@ -428,12 +488,10 @@ async function main() {
     renderTable(toWeeklyRows(weeks.get(weekSelect.value)));
   });
 
-  tabDaily.addEventListener("click", () => {
-    showTab("daily");
+  document.getElementById("tabDaily").addEventListener("click", () => {
     renderTable(toDailyRows(log[Number(dateSelect.value)].rankings));
   });
-  tabWeekly.addEventListener("click", () => {
-    showTab("weekly");
+  document.getElementById("tabWeekly").addEventListener("click", () => {
     renderTable(toWeeklyRows(weeks.get(weekSelect.value)));
   });
 

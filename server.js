@@ -170,7 +170,12 @@ function publicEntry(entry) {
 const app = express();
 app.use(express.json());
 
+// 길드원 스펙과 마찬가지로, 순위 기록도 관리자 비밀번호가 설정돼 있으면 그 비밀번호가
+// 있어야 볼 수 있다. ADMIN_PASSWORD 자체가 없으면(아직 안 정한 경우) 예전처럼 공개로 둔다.
 app.get("/api/guild-boss-log", (req, res) => {
+  if (ADMIN_PASSWORD && req.header("x-admin-password") !== ADMIN_PASSWORD) {
+    return res.status(403).json({ error: "관리자 비밀번호가 필요합니다." });
+  }
   res.json({ log });
 });
 
