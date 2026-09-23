@@ -20,6 +20,21 @@
   .hint { color: #888; font-size: 12px; margin: -4px 0 12px; }
   #empty { color: #888; }
   [hidden] { display: none !important; }
+
+  .tableWrap { overflow-x: auto; }
+  #specTable { min-width: 1400px; }
+  #specTable th, #specTable td { white-space: nowrap; }
+  #specTable td.name { font-weight: bold; }
+  #specTable button { font-size: 12px; padding: 2px 8px; background: #2a2a2a; color: #eee; border: 1px solid #444; cursor: pointer; }
+
+  #specForm { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
+  #specForm label { display: flex; flex-direction: column; font-size: 12px; color: #aaa; gap: 2px; }
+  #specForm input { font-size: 13px; padding: 5px 6px; background: #222; color: #eee; border: 1px solid #444; border-radius: 4px; }
+  #specForm .full { grid-column: 1 / -1; }
+  #specFormActions { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
+  #specFormActions button { font-size: 14px; padding: 7px 16px; background: #a67c00; color: #111; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
+  #specFormActions button.cancel { background: #333; color: #eee; }
+  #specStatus { font-size: 12px; color: #f5a; }
 </style>
 </head>
 <body>
@@ -27,6 +42,7 @@
 <div class="tabs">
   <button id="tabDaily" class="active">일별</button>
   <button id="tabWeekly">주별</button>
+  <button id="tabSpecs">길드원 스펙</button>
 </div>
 
 <div id="dailyView">
@@ -43,6 +59,63 @@
   <tbody id="tbody"></tbody>
 </table>
 <p id="empty" hidden>아직 기록된 스냅샷이 없습니다. 첫 새벽 5:58 이후 확인해주세요.</p>
+
+<div id="specsView" hidden>
+  <p class="hint">길드원 본인 이름으로 직접 입력/수정합니다. 이름만 같으면 누구나 그 줄을 수정할 수 있어요(별도 로그인 없음) — 본인 줄만 건드려주세요.</p>
+
+  <div class="tableWrap">
+    <table id="specTable">
+      <thead>
+        <tr>
+          <th>길드멤버</th><th>직업</th><th>길드보스(경)</th>
+          <th>룬 물마공합</th><th>펫 물마공합</th><th>펫 등급</th><th>펫 옵션</th>
+          <th>물마공합</th><th>단일합</th>
+          <th>악마의눈</th><th>오오라</th>
+          <th>무기</th><th>+</th><th>투구</th><th>+</th><th>갑옷</th><th>+</th>
+          <th>신발</th><th>+</th><th>반지</th><th>+</th><th>목걸이</th><th>+</th>
+          <th>귀걸이 소켓갯수</th><th>망토 발카갯수</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="specTbody"></tbody>
+    </table>
+  </div>
+  <p id="specsEmpty" hidden class="hint">아직 등록된 스펙이 없습니다. 아래에서 본인 스펙을 등록해보세요.</p>
+
+  <h3 style="font-size:14px;margin:20px 0 4px;">내 스펙 등록/수정</h3>
+  <form id="specForm">
+    <label class="full">길드멤버(본인 닉네임)<input name="길드멤버" required></label>
+    <label>직업<input name="직업"></label>
+    <label>길드보스(경)<input name="길드보스경"></label>
+    <label>룬 물마공합<input name="룬물마공합"></label>
+    <label>펫 물마공합<input name="펫물마공합"></label>
+    <label>펫 등급<input name="펫등급"></label>
+    <label>펫 옵션<input name="펫옵션"></label>
+    <label>물마공합<input name="물마공합"></label>
+    <label>단일합<input name="단일합"></label>
+    <label>악마의눈<input name="악마의눈"></label>
+    <label>오오라<input name="오오라"></label>
+    <label>무기 템이름<input name="무기템이름"></label>
+    <label>무기 강화<input name="무기강화"></label>
+    <label>투구 템이름<input name="투구템이름"></label>
+    <label>투구 강화<input name="투구강화"></label>
+    <label>갑옷 템이름<input name="갑옷템이름"></label>
+    <label>갑옷 강화<input name="갑옷강화"></label>
+    <label>신발 템이름<input name="신발템이름"></label>
+    <label>신발 강화<input name="신발강화"></label>
+    <label>반지 템이름<input name="반지템이름"></label>
+    <label>반지 강화<input name="반지강화"></label>
+    <label>목걸이 템이름<input name="목걸이템이름"></label>
+    <label>목걸이 강화<input name="목걸이강화"></label>
+    <label>귀걸이 소켓갯수<input name="귀걸이소켓갯수"></label>
+    <label>망토 발카갯수<input name="망토발카갯수"></label>
+    <div id="specFormActions">
+      <button type="submit">저장</button>
+      <button type="button" class="cancel" id="specFormCancel" hidden>취소</button>
+      <span id="specStatus"></span>
+    </div>
+  </form>
+</div>
 
 <script>
 function formatGyeong(numStr) {
@@ -121,24 +194,154 @@ function toWeeklyRows(entries) {
   return [...sums.values()].map((g) => ({ ...g, mvp: null }));
 }
 
+const SPEC_FIELDS = [
+  "직업", "길드보스경", "룬물마공합", "펫물마공합", "펫등급", "펫옵션", "물마공합", "단일합",
+  "악마의눈", "오오라",
+  "무기템이름", "무기강화", "투구템이름", "투구강화", "갑옷템이름", "갑옷강화",
+  "신발템이름", "신발강화", "반지템이름", "반지강화", "목걸이템이름", "목걸이강화",
+  "귀걸이소켓갯수", "망토발카갯수",
+];
+
+function parseNumLoose(v) {
+  const n = parseFloat(String(v ?? "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : -Infinity;
+}
+
+async function loadSpecs() {
+  const res = await fetch("/api/member-specs");
+  const { specs } = await res.json();
+  renderSpecs(specs);
+  wireSpecForm(specs);
+}
+
+function renderSpecs(specs) {
+  const tbody = document.getElementById("specTbody");
+  const emptyMsg = document.getElementById("specsEmpty");
+  const names = Object.keys(specs).sort(
+    (a, b) => parseNumLoose(specs[b].길드보스경) - parseNumLoose(specs[a].길드보스경)
+  );
+  emptyMsg.hidden = names.length > 0;
+  tbody.innerHTML = "";
+  for (const name of names) {
+    const s = specs[name];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="name">${name}</td><td>${s.직업 ?? ""}</td><td>${s.길드보스경 ?? ""}</td>
+      <td>${s.룬물마공합 ?? ""}</td><td>${s.펫물마공합 ?? ""}</td><td>${s.펫등급 ?? ""}</td><td>${s.펫옵션 ?? ""}</td>
+      <td>${s.물마공합 ?? ""}</td><td>${s.단일합 ?? ""}</td>
+      <td>${s.악마의눈 ?? ""}</td><td>${s.오오라 ?? ""}</td>
+      <td>${s.무기템이름 ?? ""}</td><td>${s.무기강화 ?? ""}</td>
+      <td>${s.투구템이름 ?? ""}</td><td>${s.투구강화 ?? ""}</td>
+      <td>${s.갑옷템이름 ?? ""}</td><td>${s.갑옷강화 ?? ""}</td>
+      <td>${s.신발템이름 ?? ""}</td><td>${s.신발강화 ?? ""}</td>
+      <td>${s.반지템이름 ?? ""}</td><td>${s.반지강화 ?? ""}</td>
+      <td>${s.목걸이템이름 ?? ""}</td><td>${s.목걸이강화 ?? ""}</td>
+      <td>${s.귀걸이소켓갯수 ?? ""}</td><td>${s.망토발카갯수 ?? ""}</td>
+      <td><button data-edit="${name}">수정</button> <button data-delete="${name}">삭제</button></td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  tbody.querySelectorAll("[data-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => fillSpecForm(btn.dataset.edit, specs[btn.dataset.edit]));
+  });
+  // 네이티브 confirm()은 UX도 안 좋고(모바일에서 특히) 자동화 테스트도 막아서, 버튼을
+  // 두 번 눌러야 실제 삭제되는 인라인 확인 방식을 쓴다 — 4초 안에 다시 안 누르면 원상복구.
+  tbody.querySelectorAll("[data-delete]").forEach((btn) => {
+    let armed = false;
+    let timer = null;
+    btn.addEventListener("click", async () => {
+      if (!armed) {
+        armed = true;
+        btn.textContent = "정말요?";
+        btn.style.background = "#7a1f1f";
+        timer = setTimeout(() => {
+          armed = false;
+          btn.textContent = "삭제";
+          btn.style.background = "";
+        }, 4000);
+        return;
+      }
+      clearTimeout(timer);
+      await fetch(`/api/member-specs/${encodeURIComponent(btn.dataset.delete)}`, { method: "DELETE" });
+      loadSpecs();
+    });
+  });
+}
+
+function fillSpecForm(name, entry) {
+  const form = document.getElementById("specForm");
+  form.elements["길드멤버"].value = name;
+  for (const field of SPEC_FIELDS) form.elements[field].value = entry?.[field] ?? "";
+  document.getElementById("specFormCancel").hidden = false;
+  form.scrollIntoView({ behavior: "smooth" });
+}
+
+function wireSpecForm() {
+  const form = document.getElementById("specForm");
+  const status = document.getElementById("specStatus");
+  const cancelBtn = document.getElementById("specFormCancel");
+
+  cancelBtn.addEventListener("click", () => {
+    form.reset();
+    cancelBtn.hidden = true;
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = form.elements["길드멤버"].value.trim();
+    if (!name) return;
+    const body = {};
+    for (const field of SPEC_FIELDS) body[field] = form.elements[field].value;
+    status.textContent = "저장 중...";
+    const res = await fetch(`/api/member-specs/${encodeURIComponent(name)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    status.textContent = res.ok ? "저장됨" : "저장 실패";
+    setTimeout(() => (status.textContent = ""), 2000);
+    if (res.ok) {
+      form.reset();
+      cancelBtn.hidden = true;
+      loadSpecs();
+    }
+  });
+}
+
 async function main() {
   const res = await fetch("/api/guild-boss-log");
   const { log } = await res.json();
 
   const dailyView = document.getElementById("dailyView");
   const weeklyView = document.getElementById("weeklyView");
+  const specsView = document.getElementById("specsView");
   const tabDaily = document.getElementById("tabDaily");
   const tabWeekly = document.getElementById("tabWeekly");
+  const tabSpecs = document.getElementById("tabSpecs");
   const dateSelect = document.getElementById("dateSelect");
   const weekSelect = document.getElementById("weekSelect");
   const empty = document.getElementById("empty");
   const table = document.getElementById("table");
 
+  function showTab(which) {
+    tabDaily.classList.toggle("active", which === "daily");
+    tabWeekly.classList.toggle("active", which === "weekly");
+    tabSpecs.classList.toggle("active", which === "specs");
+    dailyView.hidden = which !== "daily";
+    weeklyView.hidden = which !== "weekly";
+    specsView.hidden = which !== "specs";
+    table.hidden = which === "specs";
+  }
+
+  tabSpecs.addEventListener("click", () => showTab("specs"));
+  loadSpecs();
+
   if (!log.length) {
     empty.hidden = false;
-    document.querySelector(".tabs").hidden = true;
-    dailyView.hidden = true;
-    table.hidden = true;
+    dateSelect.hidden = true;
+    tabWeekly.hidden = true;
+    tabDaily.addEventListener("click", () => showTab("daily"));
     return;
   }
 
@@ -177,17 +380,11 @@ async function main() {
   });
 
   tabDaily.addEventListener("click", () => {
-    tabDaily.classList.add("active");
-    tabWeekly.classList.remove("active");
-    dailyView.hidden = false;
-    weeklyView.hidden = true;
+    showTab("daily");
     renderTable(toDailyRows(log[Number(dateSelect.value)].rankings));
   });
   tabWeekly.addEventListener("click", () => {
-    tabWeekly.classList.add("active");
-    tabDaily.classList.remove("active");
-    weeklyView.hidden = false;
-    dailyView.hidden = true;
+    showTab("weekly");
     renderTable(toWeeklyRows(weeks.get(weekSelect.value)));
   });
 

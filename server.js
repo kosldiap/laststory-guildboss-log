@@ -88,10 +88,85 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
+// 길드원 스펙 시트: { [길드멤버]: {...필드} }. 게임 API와 무관하게 길드원이 직접 입력하는
+// 값이라, 닉네임(길드멤버) 자체를 키로 쓴다 — market-tracker 거래 게시판과 같은 방식으로
+// 별도 로그인 없이 이름만으로 자기 줄을 등록/수정한다.
+const SPECS_FILE = path.join(DATA_DIR, "member_specs.json");
+const SPEC_FIELDS = [
+  "직업",
+  "길드보스경",
+  "룬물마공합",
+  "펫물마공합",
+  "펫등급",
+  "펫옵션",
+  "물마공합",
+  "단일합",
+  "악마의눈",
+  "오오라",
+  "무기템이름",
+  "무기강화",
+  "투구템이름",
+  "투구강화",
+  "갑옷템이름",
+  "갑옷강화",
+  "신발템이름",
+  "신발강화",
+  "반지템이름",
+  "반지강화",
+  "목걸이템이름",
+  "목걸이강화",
+  "귀걸이소켓갯수",
+  "망토발카갯수",
+];
+
+function loadSpecs() {
+  try {
+    return JSON.parse(fs.readFileSync(SPECS_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function saveSpecs(data) {
+  try {
+    fs.writeFileSync(SPECS_FILE, JSON.stringify(data));
+  } catch (err) {
+    console.error("[member-specs] 저장 실패:", err);
+  }
+}
+
+let memberSpecs = loadSpecs();
+
 const app = express();
+app.use(express.json());
 
 app.get("/api/guild-boss-log", (req, res) => {
   res.json({ log });
+});
+
+app.get("/api/member-specs", (req, res) => {
+  res.json({ specs: memberSpecs });
+});
+
+app.put("/api/member-specs/:name", (req, res) => {
+  const name = req.params.name.trim();
+  if (!name) return res.status(400).json({ error: "길드멤버 이름이 필요합니다." });
+
+  const entry = {};
+  for (const field of SPEC_FIELDS) {
+    const value = req.body[field];
+    entry[field] = typeof value === "string" ? value.trim() : value ?? "";
+  }
+  memberSpecs[name] = entry;
+  saveSpecs(memberSpecs);
+  res.json({ ok: true, name, entry });
+});
+
+app.delete("/api/member-specs/:name", (req, res) => {
+  const name = req.params.name.trim();
+  delete memberSpecs[name];
+  saveSpecs(memberSpecs);
+  res.json({ ok: true });
 });
 
 app.use(express.static(path.join(__dirname, "public")));
